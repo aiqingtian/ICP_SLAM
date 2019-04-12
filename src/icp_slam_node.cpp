@@ -1,14 +1,9 @@
-//
-// Created by rakesh on 13/08/18.
-//
-
 #include <ros/ros.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
 #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
 #include <ros/console.h>
-
 #include <icp_slam/icp_slam.h>
 #include <icp_slam/mapper.h>
 
@@ -56,9 +51,6 @@ protected:
   double resolution_;
   Mapper mapper_;
   nav_msgs::OccupancyGrid occupancy_grid_;
-
-
-
 };
 
 ICPSlamNode::ICPSlamNode() : local_nh_("~")
@@ -67,7 +59,6 @@ ICPSlamNode::ICPSlamNode() : local_nh_("~")
   map_publisher_ = local_nh_.advertise<nav_msgs::OccupancyGrid>("map", 1);
   // getting ROS parameters:
   // local_nh_.param<TYPE>(PARAM_NAME, OUTPUT_VARIABLE, DEFAULT_VALUE)
-
   double map_update_interval;
   local_nh_.param("map_update_interval", map_update_interval, 2.0);
   map_publish_interval_.fromSec(map_update_interval);
@@ -82,26 +73,17 @@ ICPSlamNode::ICPSlamNode() : local_nh_("~")
   local_nh_.param<double>("max_keyframes_distance", max_keyframes_distance, 0.02);
   local_nh_.param<double>("max_keyframes_angle", max_keyframes_angle, 0.01);
   local_nh_.param<double>("max_keyframes_time", max_keyframes_time, 0.5);
-
   local_nh_.param("resolution",  resolution_, 0.05);
-
-  // local_nh_.param("xmin", x_min_, -15.0);
-  // local_nh_.param("ymin", y_min_, -15.0);
-  // local_nh_.param("xmax", x_max_, 15.0);
-  // local_nh_.param("ymax", y_max_, 15.0);
   local_nh_.param("xmin", x_min_, 0.0);
   local_nh_.param("ymin", y_min_, 0.0);
   local_nh_.param("xmax", x_max_, 100.0);
   local_nh_.param("ymax", y_max_, 100.0);
 
-  // TODO: initialize the map (width_, height_, origin_)
+  // Initialize the map (width_, height_, origin_)
   width_ = (unsigned int)((x_max_ - x_min_) / resolution_);
   height_ = (unsigned int)((y_max_ - y_min_) / resolution_);
-
   origin_x_ = (x_max_ + x_min_) / 2;
   origin_y_ = (y_max_ + y_min_) / 2;
-
-
   icp_slam_.reset(new ICPSlam(max_keyframes_distance, max_keyframes_angle, max_keyframes_time));
 
   // occupancy grid
@@ -119,10 +101,7 @@ ICPSlamNode::ICPSlamNode() : local_nh_("~")
 
 void ICPSlamNode::laserCallback(const sensor_msgs::LaserScanConstPtr &laser_msg)
 {
-
   static ros::Time last_map_update(0, 0);
-
-  // TODO: get laser pose in odom frame (using tf)
   tf::StampedTransform tf_odom_laser;
   try
   {
@@ -136,45 +115,33 @@ void ICPSlamNode::laserCallback(const sensor_msgs::LaserScanConstPtr &laser_msg)
     return;
   }
 
-  // try{
-    // current pose
     tf::StampedTransform tf_map_laser;
     auto is_keyframe = icp_slam_->track(laser_msg, tf_odom_laser, tf_map_laser);
     if (is_keyframe)
     {
-      //TODO: update the map
+      //Update the map
       if (laser_msg->header.stamp - last_map_update > map_publish_interval_){
         mapper_.updateMap(laser_msg, tf_map_laser);
         publishMap(laser_msg->header.stamp);
         last_map_update = ros::Time::now();
       }
     }
-    
-    // TODO: broadcast odom to map transform (using tf)
+    // Broadcast odom to map transform (using tf)
     tf::StampedTransform tf_map_odom;
     tf_map_odom = tf::StampedTransform(tf_odom_laser * tf_map_laser.inverse(), ros::Time::now(),"map","odom");
-    // tf_map_odom = tf::StampedTransform(tf_map_laser * tf_odom_laser.inverse(), ros::Time::now(),"map","odom");
     tf_broadcaster_.sendTransform(tf_map_odom);
-    // tf_broadcaster_.sendTransform(tf_map_laser);
-  // }
-  // catch (cv::Exception &ex){
-  //   return;
-  // }
 }
 
 void ICPSlamNode::publishMap(ros::Time timestamp)
 {
-  // TODO: publish the occupancy grid map
+  // Publish the occupancy grid map
   auto map = mapper_.getMapCopy();
-
   occupancy_grid_.header.stamp = timestamp;
-  // TODO: use map frame
+  // Use map frame
   occupancy_grid_.header.frame_id = map_frame_id_;
-
   memcpy(occupancy_grid_.data.data(), map.data, map.total()*sizeof(int8_t));
   map_publisher_.publish(occupancy_grid_);
-
-  cv::imwrite("/home/songyih/map.png", map);
+  cv::imwrite("/map.png", map);
 }
 
 int main(int argc, char **argv)

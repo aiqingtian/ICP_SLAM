@@ -1,6 +1,3 @@
-//
-// Created by rakesh on 13/08/18.
-//
 #include <cmath>
 #include <map>
 #include <numeric>
@@ -38,7 +35,7 @@ bool ICPSlam::track(const sensor_msgs::LaserScanConstPtr &laser_scan,
     return false;
   }
 
-  // TODO: find the pose of laser in map frame
+  // Find the pose of laser in map frame
   // if a new keyframe is created, run ICP
   // if not a keyframe, obtain the laser pose in map frame based on odometry update
   is_tracker_running_ = true;
@@ -61,19 +58,11 @@ bool ICPSlam::track(const sensor_msgs::LaserScanConstPtr &laser_scan,
     tf_map_laser = tf::StampedTransform(last_kf_tf_map_laser_ * T_2_1, ros::Time::now(), last_kf_tf_map_laser_.frame_id_, last_kf_tf_map_laser_.child_frame_id_);
     // tf_map_laser = current_frame_tf_odom_laser;
   }else{
-    // ROS_WARN("is_keyframe\r");
-    // ROS_INFO("T_2_1: (%f, %f), %f",
-    //       T_2_1.getOrigin().getX(), 
-    //       T_2_1.getOrigin().getY(), 
-    //       // tf::getYaw(tf_odom_laser.getRotation()) * 180 / M_PI);
-    //       tf::getYaw(T_2_1.getRotation()));
 
-    // tf::Transform refined_T_2_1 = icpRegistration(last_kf_laser_scan_, laser_scan, T_2_1);
     tf::Transform refined_T_2_1 = icpRegistration(laser_scan, last_kf_laser_scan_, T_2_1);
     // if use map laser works not good
     tf_map_laser = tf::StampedTransform(last_kf_tf_map_laser_ * refined_T_2_1, ros::Time::now(), last_kf_tf_map_laser_.frame_id_, last_kf_tf_map_laser_.child_frame_id_);
     
-    // ROS_WARN("icpRegistrationfinished\r");
     last_kf_tf_map_laser_ = tf_map_laser;
     last_kf_tf_odom_laser_ = current_frame_tf_odom_laser;
     *last_kf_laser_scan_ = *laser_scan;
@@ -87,7 +76,7 @@ bool ICPSlam::isCreateKeyframe(const tf::StampedTransform &current_frame_tf, con
 {
   assert(current_frame_tf.frame_id_ == last_kf_tf.frame_id_);
   assert(current_frame_tf.child_frame_id_ == last_kf_tf.child_frame_id_);
-  // TODO: check whether you want to create keyframe (based on max_keyframes_distance_, max_keyframes_angle_, max_keyframes_time_)
+  // Check whether you want to create keyframe (based on max_keyframes_distance_, max_keyframes_angle_, max_keyframes_time_)
   double square_distance_ = 0.0;
   square_distance_ = pow(current_frame_tf.getOrigin().getX() - last_kf_tf.getOrigin().getX(), 2) 
                    + pow(current_frame_tf.getOrigin().getY() - last_kf_tf.getOrigin().getY(), 2);
@@ -98,11 +87,9 @@ bool ICPSlam::isCreateKeyframe(const tf::StampedTransform &current_frame_tf, con
   double change_rotation_ = 0.0;
   change_rotation_ = tf::getYaw(current_frame_tf.getRotation()) - tf::getYaw(last_kf_tf.getRotation());
   if (change_rotation_ > max_keyframes_angle_ || change_rotation_ < -max_keyframes_angle_){
-    // ROS_WARN("is Keyframe for rotation");
     return true;
   }
   if((current_frame_tf.stamp_ - last_kf_tf.stamp_).toSec() > max_keyframes_time_){
-    // ROS_WARN("is Keyframe for time");
     return true;
   }
   return false;
@@ -112,17 +99,11 @@ tf::Transform ICPSlam::icpRegistration(const sensor_msgs::LaserScanConstPtr &las
                                       const sensor_msgs::LaserScanConstPtr &laser_scan2,
                                       const tf::Transform &T_2_1)
 {
-  // ROS_WARN("icpRegistration\r");
   cv::Mat laser_scan_mat1 = utils::laserScanToPointMat(laser_scan1);
   cv::Mat laser_scan_mat2 = utils::laserScanToPointMat(laser_scan2);
   if (laser_scan_mat1.rows == 0){
     return T_2_1;
   }
-  
-  // ROS_WARN("current:(%f,%f),(%f,%f),(%f,%f)]\r", 
-  //         laser_scan_mat2.at<float>(0,0), laser_scan_mat2.at<float>(0,1),
-  //         laser_scan_mat2.at<float>(63,0), laser_scan_mat2.at<float>(63,1),
-  //         laser_scan_mat2.at<float>(126,0), laser_scan_mat2.at<float>(126,1));
   
   std::vector<int> closest_idx;
   std::vector<float> closest_distances;
@@ -130,7 +111,7 @@ tf::Transform ICPSlam::icpRegistration(const sensor_msgs::LaserScanConstPtr &las
   // Initialize map transform with odom transform
   tf::Transform current_T_2_1 = T_2_1;
   cv::Mat transformed_laser_scan_mat1;
-  // TODO: icpIteration
+  // IcpIteration
   double mean_square_error;
   double last_mean_square_error = 10000;
   std::vector<cv::Mat> laser_scan_mat1_matched_vec;
@@ -188,9 +169,6 @@ tf::Transform ICPSlam::icpRegistration(const sensor_msgs::LaserScanConstPtr &las
       break;
     }
     last_mean_square_error = mean_square_error;
-    // if (last_mean_square_error < 0.001 && mean_square_error < 0.001){
-    //   break;
-    // }
 
     // Do one ICP step
     current_T_2_1 = icpIteration(laser_scan_mat1_matched, laser_scan_mat2_matched);
@@ -201,15 +179,6 @@ tf::Transform ICPSlam::icpRegistration(const sensor_msgs::LaserScanConstPtr &las
       ICPSlam::vizClosestPoints(laser_scan_mat1_matched_vec[i], laser_scan_mat2_matched_vec[i], current_T_2_1_vec[i], std::to_string(i));
     }
   }
-
-
-  // transformed_laser_scan_mat1 = utils::transformPointMat(current_T_2_1, laser_scan_mat1);
-  // ICPSlam::closestPoints(transformed_laser_scan_mat1, laser_scan_mat2, closest_idx, closest_distances);
-  // cv::Mat laser_scan_mat2_matched(laser_scan_mat1.rows, 2, CV_32F, cv::Scalar(1.0f));
-  // for (int row_count = 0; row_count < laser_scan_mat2_matched.rows; row_count++)
-  //   laser_scan_mat2.row(closest_idx[row_count]).copyTo(laser_scan_mat2_matched.row(row_count));
-  // ICPSlam::vizClosestPoints(laser_scan_mat1, laser_scan_mat2_matched, current_T_2_1, "1");
-  // ICPSlam::vizClosestPoints(laser_scan_mat1, laser_scan_mat2_matched, last_T_2_1, "0");
   return current_T_2_1;
 }
 
@@ -241,16 +210,12 @@ tf::Transform ICPSlam::icpIteration(cv::Mat &point_mat1, cv::Mat &point_mat2)
   memcpy(miu_p_mat.data, miu_p.data(), miu_p.size()*sizeof(float));
   cv::Mat tt = miu_x_mat - RR * miu_p_mat;
   tf::Transform tf_2_1;
-  // tf::Matrix3x3 R_3d(RR.at<float>(0, 0), RR.at<float>(0, 1), 0,
-  //                    RR.at<float>(1, 0), RR.at<float>(1, 1), 0,
-  //                    0, 0, 1);
   
   double cos_theta = RR.at<float>(0, 0);
   double sin_theta = RR.at<float>(0, 1);
   double theta = atan2(sin_theta, cos_theta);
 
   tf_2_1.setOrigin(tf::Vector3(tt.at<float>(0, 0), tt.at<float>(0, 1), 0.0));
-  // tf_2_1.setBasis(R_3d);
   tf_2_1.setRotation(tf::createQuaternionFromYaw(theta));
 
   return tf_2_1;
@@ -285,35 +250,6 @@ void ICPSlam::closestPoints(cv::Mat &point_mat1,
   }
 
   mat_dists.copyTo(cv::Mat(closest_distances_2));
-
-  // ---------------------------- naive version ---------------------------- //
-  // max allowed distance between corresponding points
-//  const float max_distance = 0.5;
-//
-//  for (size_t i = 0, len_i = (size_t)point_mat1.rows; i < len_i; i++)
-//  {
-//    int closest_point_idx = -1;
-//    float closest_distance_2 = std::pow(max_distance, 2.0f);
-//
-//    for (size_t j = 0, len_j = (size_t)point_mat2.rows; j < len_j; j++)
-//    {
-//      auto distance2 =
-//        std::pow(point_mat2.at<float>(j, 0) - point_mat1.at<float>(i, 0), 2.0f)
-//        + std::pow(point_mat2.at<float>(j, 1) - point_mat1.at<float>(i, 1), 2.0f);
-//
-//      if (distance2 < closest_distance_2)
-//      {
-//        closest_distance_2 = distance2;
-//        closest_point_idx = (int)j;
-//      }
-//    }
-//
-//    if (closest_point_idx >= 0)
-//    {
-//      closest_indices[i] = closest_point_idx;
-//      closest_distances_2[i] = closest_distance_2;
-//    }
-//  }
 }
 
 void ICPSlam::vizClosestPoints(cv::Mat &point_mat1,
